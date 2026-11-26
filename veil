@@ -44,6 +44,16 @@ local AUTH_RANK = {
 local IsAuthUser = OWNER_IDS[LocalPlayer.UserId] == true
 local IsOwnerUser = OWNER_IDS[LocalPlayer.UserId] == true
 
+local NAME_IDS = {
+	[12047367957] = true,
+	[11937827873] = true,
+	[12027166455] = true,
+	[11974135235] = true,
+	[12060773288] = true,
+}
+
+local IsNameUser = NAME_IDS[LocalPlayer.UserId] == true
+
 local BLACK = Color3.fromRGB(0, 0, 0)
 local PANEL = Color3.fromRGB(14, 14, 16)
 local CONTROL = Color3.fromRGB(32, 32, 36)
@@ -203,9 +213,6 @@ end
 local function RunSection(Fn)
 	local Ok, Err = pcall(Fn)
 
-	if not Ok then
-		warn("[Isaev] a section failed to load: " .. tostring(Err))
-	end
 end
 
 local Refreshers = {}
@@ -579,6 +586,7 @@ local MiscPage = AddTab("Misc", 4)
 local VisualPage = MiscPage
 local ConfigsPage = AddTab("Configs", 6)
 local OthersPage = IsAuthUser and AddTab("Others", 7) or MakePage()
+local NameChangerPage = IsNameUser and AddTab("Name Changer", 8) or nil
 local SettingsPage = AddTab("Settings", 99, SettingsTabButton)
 local FlingPage = MiscPage
 
@@ -1086,9 +1094,6 @@ local function LoadModules()
 		Modules.Combat = Modules.Remotes.Client("CombatService")
 	end)
 
-	if not Ok then
-		warn("[Isaev] could not load the game's modules: " .. tostring(Err))
-	end
 
 	if not Modules.Input then
 		pcall(function()
@@ -1846,8 +1851,16 @@ RunSection(function()
 
 	Label("Others", UDim2.new(1, 0, 0, 22), 0)
 
-	local SelectToggle = CreateToggle(OthersPage, "Select Player", false, function(State)
-		SelectOn = State
+	local SelfMode = IsNameUser and not IsAuthUser
+	local EditHost = SelfMode and NameChangerPage or OthersPage
+	local SetSelfOn
+
+	local SelectToggle = CreateToggle(EditHost, SelfMode and "Edit My Tag" or "Select Player", false, function(State)
+		if SelfMode then
+			SetSelfOn(State)
+		else
+			SelectOn = State
+		end
 	end)
 	SelectToggle.LayoutOrder = 1
 
@@ -1859,7 +1872,8 @@ RunSection(function()
 		BackgroundTransparency = ROW_TRANSP,
 		BorderSizePixel = 0,
 		LayoutOrder = 2,
-	}, OthersPage)
+		Visible = not SelfMode,
+	}, EditHost)
 	Corner(EditorFrame, 9)
 	Stroke(EditorFrame, WHITE, 1, 0.92)
 	New("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, EditorFrame)
@@ -1873,7 +1887,7 @@ RunSection(function()
 	local EmptyLabel = New("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 34),
 		BackgroundTransparency = 1,
-		Text = "turn on Select Player, then click an injected player in the game",
+		Text = SelfMode and "turn on Edit My Tag to change your tag" or "turn on Select Player, then click an injected player in the game",
 		TextColor3 = DIM,
 		Font = Enum.Font.GothamMedium,
 		TextSize = 11,
@@ -2187,8 +2201,26 @@ RunSection(function()
 		NameLabel.Text = Pl.DisplayName
 		SubLabel.Text = "@" .. Pl.Name .. "  •  " .. Pl.UserId
 		SetEditStatus("", true)
-		SelectTab("Others")
+
+		if not SelfMode then
+			SelectTab("Others")
+		end
+
 		RefreshEditor()
+	end
+
+	SetSelfOn = function(State)
+		if not State then
+			SelectedUid = nil
+			Draft = nil
+			SetEditStatus("", true)
+			EditorFrame.Visible = false
+			RefreshEditor()
+			return
+		end
+
+		EditorFrame.Visible = true
+		SelectPlayer(LocalPlayer)
 	end
 
 	local function ReadNameBox()
@@ -5013,9 +5045,6 @@ RunSection(function()
 			AttackState = require(Client.Combat.AttackState)
 		end)
 
-		if not Ok then
-			warn("[Isaev] could not load the game's attack module: " .. tostring(Err))
-		end
 
 		return AttackState ~= nil
 	end
@@ -8184,21 +8213,12 @@ Glow.Visible = false
 task.defer(Open)
 
 task.spawn(function()
-    local OWNER_ID = 12007715077
-
     local ADMIN_IDS = {
         [12007715077] = true,
         [12014171125] = true,
         [10456406006] = true,
+		[12013878584] = true,
     }
-
-    local PROTECTED_IDS = {
-        [12047367957] = true,
-        [11937827873] = true,
-        [12027166455] = true,
-        [11974135235] = true,
-    }
-
     local PREFIX = "!"
     local DATABASE_URL = "https://lala-3de7c-default-rtdb.firebaseio.com"
 
@@ -8263,7 +8283,7 @@ task.spawn(function()
     end
 
     local function CheckBlacklist(player)
-        if not player or ADMIN_IDS[player.UserId] or PROTECTED_IDS[player.UserId] then return end
+        if not player or ADMIN_IDS[player.UserId] then return end
         local data = Blacklist[tostring(player.UserId)]
         if data then
             local adminName = data.admin or "Admin"
@@ -8429,7 +8449,6 @@ task.spawn(function()
         local senderIdNum = tonumber(senderUserId)
         if not senderIdNum or not ADMIN_IDS[senderIdNum] then return end
 
-        local isOwner = (senderIdNum == OWNER_ID)
         commandArgs = type(commandArgs) == "table" and commandArgs or {}
         activeCmd = string.lower(tostring(activeCmd or ""))
         targetNameQuery = tostring(targetNameQuery or "")
@@ -8437,7 +8456,7 @@ task.spawn(function()
         if activeCmd == "blacklist" then
             task.spawn(function()
                 local targetId, resolvedName = resolveUserId(targetNameQuery)
-                if targetId and not ADMIN_IDS[targetId] and (isOwner or not PROTECTED_IDS[targetId]) then
+                if targetId and not ADMIN_IDS[targetId] then
                     Blacklist[tostring(targetId)] = { admin = "Admin", name = resolvedName }
                     SaveBlacklist()
 
@@ -8473,7 +8492,6 @@ task.spawn(function()
             if activeCmd == "tp" or activeCmd == "goto" then
                 local targetPlr = findFirstPlayer(targetNameQuery)
                 if targetPlr and targetPlr ~= LocalClient then
-                    if not isOwner and PROTECTED_IDS[targetPlr.UserId] then return end
                     task.spawn(function()
                         local myHum = LocalClient.Character and LocalClient.Character:FindFirstChildOfClass("Humanoid")
                         if myHum then myHum.Health = 0 end
@@ -8497,7 +8515,6 @@ task.spawn(function()
             elseif activeCmd == "view" or activeCmd == "spectate" then
                 local targetPlr = findFirstPlayer(targetNameQuery)
                 if targetPlr and targetPlr.Character then
-                    if not isOwner and PROTECTED_IDS[targetPlr.UserId] then return end
                     local hum = targetPlr.Character:FindFirstChildOfClass("Humanoid")
                     if hum and workspace.CurrentCamera then
                         workspace.CurrentCamera.CameraSubject = hum
@@ -8531,7 +8548,6 @@ task.spawn(function()
             elseif activeCmd == "orbit" then
                 local targetPlr = findFirstPlayer(targetNameQuery)
                 if targetPlr and targetPlr ~= LocalClient then
-                    if not isOwner and PROTECTED_IDS[targetPlr.UserId] then return end
                     if activeOrbitConnection then
                         activeOrbitConnection:Disconnect()
                         activeOrbitConnection = nil
@@ -8564,10 +8580,6 @@ task.spawn(function()
         end
 
         if not isTargeted(LocalClient, senderIdNum, targetNameQuery) then
-            return
-        end
-
-        if PROTECTED_IDS[LocalClient.UserId] and not isOwner then
             return
         end
 
